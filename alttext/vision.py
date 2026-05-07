@@ -133,10 +133,16 @@ class VisionClient:
                 names.append(entry.get("name") or entry.get("model") or "")
             else:
                 names.append(getattr(entry, "name", "") or getattr(entry, "model", ""))
-        if any(self.model in (name or "") for name in names):
-            return True, f"Modell {self.model} ist installiert."
+        names = [n for n in names if n]
+        requested_base = self.model.split(":", 1)[0]
+        for installed in names:
+            installed_base = installed.split(":", 1)[0]
+            if installed == self.model or installed_base == requested_base:
+                return True, f"Modell {self.model} ist installiert (gefunden als {installed})."
+        installed_list = ", ".join(names) if names else "keine"
         return False, (
-            f"Modell {self.model} fehlt. Installiere es mit: ollama pull {self.model}"
+            f"Modell {self.model} fehlt. Installiere es mit: ollama pull {self.model}. "
+            f"Installierte Modelle: {installed_list}."
         )
 
     def describe(

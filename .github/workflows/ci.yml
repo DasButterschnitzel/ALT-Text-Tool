@@ -7,6 +7,10 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit-tests:
     name: Unit-Tests (Python ${{ matrix.python-version }})
@@ -76,9 +80,11 @@ jobs:
           exit 1
 
       - name: Pull a small vision model for the smoke test
-        run: ollama pull moondream:latest
+        run: |
+          ollama pull moondream:latest
+          ollama list
 
       - name: Run smoke test
         env:
           ALTTEXT_SMOKE_MODEL: moondream:latest
-        run: python scripts/smoke_test.py
+        run: python -u scripts/smoke_test.py

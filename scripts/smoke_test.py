@@ -32,6 +32,27 @@ def _make_image(path: Path) -> None:
 
 def main() -> int:
     model = os.environ.get("ALTTEXT_SMOKE_MODEL", "moondream:latest")
+    print(f"[smoke] Verwende Modell: {model}", flush=True)
+    print(f"[smoke] Ollama-Host: {ollama_host()}", flush=True)
+
+    # Diagnose: was ist tatsaechlich installiert?
+    try:
+        listing = ollama.Client(host=ollama_host()).list()
+        models_iter = (
+            listing.get("models", [])
+            if isinstance(listing, dict)
+            else getattr(listing, "models", [])
+        )
+        names = []
+        for entry in models_iter:
+            if isinstance(entry, dict):
+                names.append(entry.get("name") or entry.get("model") or "?")
+            else:
+                names.append(getattr(entry, "name", None) or getattr(entry, "model", "?"))
+        print(f"[smoke] Installierte Modelle: {names}", flush=True)
+    except Exception as exc:
+        print(f"[smoke] ollama.list() Fehler: {exc}", file=sys.stderr, flush=True)
+        return 1
 
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "smoke.jpg"
