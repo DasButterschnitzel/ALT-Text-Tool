@@ -28,7 +28,7 @@ pip install -r requirements.txt
 pip install -e .
 
 # 4. Vision-Modell ziehen (einmalig, ca. 6 GB)
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-vl:8b
 
 # 5. Setup pruefen
 alttext check
@@ -153,7 +153,7 @@ Bestehende Werte werden nicht ueberschrieben, ausser du setzt `--force`.
 
 **Ollama nicht erreichbar.** Pruefe mit `ollama list`, ob der Dienst laeuft. Standardport ist `127.0.0.1:11434`. Eine andere Adresse setzt du via Umgebungsvariable `OLLAMA_HOST`.
 
-**Modell fehlt.** Fuehre `ollama pull qwen2.5vl:7b` aus.
+**Modell fehlt.** Fuehre `ollama pull qwen3-vl:8b` aus.
 
 **ExifTool wird nicht gefunden.** Lege das Binary in `./bin/` ab oder installiere es ueber den Paketmanager. `alttext check` zeigt den gefundenen Pfad.
 
