@@ -14,6 +14,9 @@ setup(
         "rich>=13.7.0",
         "typer>=0.12.0",
     ],
+    extras_require={
+        "heic": ["pillow-heif>=0.18.0"],
+    },
     entry_points={
         "console_scripts": [
             "alttext=alttext.cli:app",

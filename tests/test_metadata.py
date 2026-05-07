@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from alttext.config import find_exiftool
-from alttext.metadata import has_existing_alt, read_alt_fields, write_alt_text
+from alttext.metadata import _matches_field, has_existing_alt, read_alt_fields, write_alt_text
 
 requires_exiftool = pytest.mark.skipif(
     find_exiftool() is None, reason="ExifTool nicht installiert"
@@ -52,3 +52,21 @@ def test_force_overwrites(jpeg_image: Path):
     write_alt_text(jpeg_image, "Zweiter Text", backup=False, force=True)
     fields = read_alt_fields(jpeg_image)
     assert any("Zweiter" in value for value in fields.values())
+
+
+def test_matches_field_exact():
+    assert _matches_field("XMP:Description", "XMP-dc:Description") is True
+    assert _matches_field("XMP-dc:Description", "XMP-dc:Description") is True
+    assert _matches_field("IPTC:Caption-Abstract", "IPTC:Caption-Abstract") is True
+
+
+def test_matches_field_rejects_substrings():
+    # EXIF:ImageDescription should NOT count as XMP-dc:Description
+    assert _matches_field("EXIF:ImageDescription", "XMP-dc:Description") is False
+    assert _matches_field("XMP:UserComment", "XMP-dc:Description") is False
+
+
+def test_matches_field_alt_text_accessibility():
+    assert _matches_field(
+        "XMP:AltTextAccessibility", "XMP-iptc4xmpCore:AltTextAccessibility"
+    ) is True

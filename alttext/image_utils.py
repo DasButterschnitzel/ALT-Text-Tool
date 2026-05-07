@@ -8,17 +8,30 @@ from typing import Iterable
 
 from PIL import Image, UnidentifiedImageError
 
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    HEIF_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dep
+    HEIF_AVAILABLE = False
+
 from .config import HEIC_EXTENSIONS, MAX_IMAGE_DIMENSION, SUPPORTED_EXTENSIONS
 
 
 def discover_images(folder: Path, recursive: bool) -> tuple[list[Path], list[Path]]:
-    """Return (supported_images, heic_images) below folder."""
+    """Return (processable_images, unsupported_heic) below folder.
+
+    When pillow-heif is available, HEIC/HEIF files are added to the
+    processable list. Otherwise they go into the second list as a hint
+    to the user.
+    """
     if not folder.exists() or not folder.is_dir():
         raise NotADirectoryError(f"Ordner nicht gefunden: {folder}")
 
     iterator: Iterable[Path] = folder.rglob("*") if recursive else folder.iterdir()
     supported: list[Path] = []
-    heic: list[Path] = []
+    heic_skipped: list[Path] = []
     for path in iterator:
         if not path.is_file():
             continue
@@ -26,10 +39,13 @@ def discover_images(folder: Path, recursive: bool) -> tuple[list[Path], list[Pat
         if ext in SUPPORTED_EXTENSIONS:
             supported.append(path)
         elif ext in HEIC_EXTENSIONS:
-            heic.append(path)
+            if HEIF_AVAILABLE:
+                supported.append(path)
+            else:
+                heic_skipped.append(path)
     supported.sort()
-    heic.sort()
-    return supported, heic
+    heic_skipped.sort()
+    return supported, heic_skipped
 
 
 def load_and_resize(path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> bytes:

@@ -47,6 +47,12 @@ alttext generate ./fotos --recursive
 # Englische Texte, ohne Backup-Dateien
 alttext generate ./photos --lang en --no-backup
 
+# 4 Bilder gleichzeitig analysieren (Ollama-Server haelt das gut aus)
+alttext generate ./fotos --workers 4
+
+# Nur die ersten 5 Bilder verarbeiten (Test-Lauf)
+alttext generate ./fotos --limit 5 --dry-run
+
 # Nur trocken testen, nichts schreiben
 alttext generate ./fotos --dry-run
 
@@ -64,6 +70,14 @@ alttext stats ./fotos
 
 # Setup-Check
 alttext check
+```
+
+### HEIC/HEIF (iPhone-Bilder)
+
+Standardmaessig werden HEIC/HEIF-Dateien uebersprungen. Mit dem optionalen Extra geht das auch:
+
+```bash
+pip install 'alttext[heic]'
 ```
 
 ## Was sind BITV-konforme Alt-Texte?

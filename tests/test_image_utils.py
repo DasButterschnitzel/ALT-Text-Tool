@@ -35,9 +35,16 @@ def test_discover_recursive(tmp_path: Path):
 
 
 def test_discover_reports_heic(tmp_path: Path):
+    import alttext.image_utils as iu
+
     (tmp_path / "photo.heic").write_bytes(b"fake")
-    _, heic = discover_images(tmp_path, recursive=False)
-    assert len(heic) == 1
+    images, heic = discover_images(tmp_path, recursive=False)
+    if iu.HEIF_AVAILABLE:
+        # When pillow-heif is installed, HEIC is processable, no skip-list entry.
+        assert any(p.name == "photo.heic" for p in images)
+        assert heic == []
+    else:
+        assert len(heic) == 1
 
 
 def test_load_and_resize_downscales(tmp_path: Path):

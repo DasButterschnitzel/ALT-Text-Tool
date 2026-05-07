@@ -30,17 +30,30 @@ def exif_helper() -> Iterator[exiftool.ExifToolHelper]:
         helper.terminate()
 
 
+def _matches_field(key: str, field: str) -> bool:
+    """Check if an exiftool key represents the requested field.
+
+    ExifTool returns keys with group prefixes that vary (e.g. "XMP:Description"
+    vs "XMP-dc:Description"). We compare the suffix after the last colon
+    case-insensitively but require an exact match, not endswith.
+    """
+    key_suffix = key.rsplit(":", 1)[-1].lower()
+    field_suffix = field.rsplit(":", 1)[-1].lower()
+    return key_suffix == field_suffix
+
+
 def read_alt_fields(path: Path) -> dict[str, str]:
     """Return non-empty alt-text-related fields currently set on the file."""
+    tag_args = [f"-{field}" for field in METADATA_FIELDS]
     with exif_helper() as helper:
-        metadata = helper.get_metadata([str(path)])
+        metadata = helper.execute_json(*tag_args, str(path))
     if not metadata:
         return {}
     record = metadata[0]
     found: dict[str, str] = {}
     for field in METADATA_FIELDS:
         for key, value in record.items():
-            if key.lower().endswith(field.lower().split(":")[-1]) and value:
+            if value and _matches_field(key, field):
                 found[field] = str(value)
                 break
     return found
@@ -89,9 +102,9 @@ def stats_for_folder(paths: list[Path]) -> dict[str, int]:
     counts = {"total": len(paths), "with_alt": 0, "without_alt": 0, "errors": 0}
     if not paths:
         return counts
+    tag_args = [f"-{field}" for field in METADATA_FIELDS]
     with exif_helper() as helper:
-        metadata = helper.get_metadata([str(p) for p in paths])
-    target_keys = {field.lower().split(":")[-1] for field in METADATA_FIELDS}
+        metadata = helper.execute_json(*tag_args, *[str(p) for p in paths])
     for record in metadata:
         if "ExifTool:Error" in record:
             counts["errors"] += 1
@@ -99,7 +112,7 @@ def stats_for_folder(paths: list[Path]) -> dict[str, int]:
         has_alt = any(
             value
             for key, value in record.items()
-            if any(key.lower().endswith(target) for target in target_keys)
+            if any(_matches_field(key, field) for field in METADATA_FIELDS)
         )
         if has_alt:
             counts["with_alt"] += 1

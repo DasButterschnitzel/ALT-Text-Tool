@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,7 +29,7 @@ from .metadata import (
     stats_for_folder,
     write_alt_text,
 )
-from .review import ReviewItem, load_queue, run_review, save_queue
+from .review import ReviewItem, clear_queue, load_queue, run_review, save_queue
 from .vision import VisionClient
 
 app = typer.Typer(
@@ -176,6 +177,14 @@ def generate(
     export_csv: bool = typer.Option(False, "--export-csv", help="Nur CSV exportieren, keine Metadaten schreiben"),
     html_report: bool = typer.Option(False, "--html-report", help="HTML-Report mit Thumbnails erzeugen"),
     sidecar: bool = typer.Option(False, "--sidecar", help="Pro Bild eine .alttext.json schreiben"),
+    workers: int = typer.Option(
+        1, "--workers", "-w", min=1, max=16,
+        help="Anzahl paralleler Vision-Aufrufe (Ollama unterstuetzt mehrere Requests).",
+    ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", min=1,
+        help="Nur die ersten N Bilder verarbeiten (nuetzlich zum Testen).",
+    ),
 ) -> None:
     """Generiert Alt-Texte fuer alle Bilder im Ordner."""
     if lang not in {"de", "en"}:
@@ -185,11 +194,15 @@ def generate(
     images, heic = discover_images(folder, recursive=recursive)
     if heic:
         console.print(
-            f"[yellow]Hinweis: {len(heic)} HEIC/HEIF-Datei(en) werden ignoriert (kein Support).[/yellow]"
+            f"[yellow]Hinweis: {len(heic)} HEIC/HEIF-Datei(en) uebersprungen. "
+            "Installiere pillow-heif (pip install 'alttext[heic]') fuer Support.[/yellow]"
         )
     if not images:
         console.print("[yellow]Keine unterstuetzten Bilder gefunden.[/yellow]")
         raise typer.Exit()
+    if limit is not None and limit < len(images):
+        console.print(f"[cyan]--limit aktiv: nur die ersten {limit} von {len(images)} Bildern.[/cyan]")
+        images = images[:limit]
 
     console.print(f"[bold]{len(images)}[/bold] Bilder gefunden in {folder}.")
     batch_context: Optional[str] = None
@@ -226,29 +239,45 @@ def generate(
     skip_count = 0
     error_count = 0
 
+    # Pre-filter: skip-existing check is sequential because it touches ExifTool.
+    pending: list[Path] = []
+    if skip_existing and not force:
+        for path in images:
+            try:
+                if has_existing_alt(path):
+                    _write_log_row(writer, str(path), "", 0, "skip-existing")
+                    skip_count += 1
+                else:
+                    pending.append(path)
+            except ExifToolMissingError as exc:
+                console.print(f"[red]{exc}[/red]")
+                log_file.close()
+                raise typer.Exit(code=1)
+    else:
+        pending = list(images)
+
+    def _describe(path: Path):
+        try:
+            return path, client.describe(path, lang=lang, batch_context=batch_context), None
+        except Exception as exc:
+            return path, None, exc
+
+    def _iter_results():
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(_describe, p) for p in pending]
+                for fut in as_completed(futures):
+                    yield fut.result()
+        else:
+            for p in pending:
+                yield _describe(p)
+
     try:
         with progress:
-            task_id = progress.add_task("Analysiere Bilder", total=len(images))
-            for path in images:
+            task_id = progress.add_task("Analysiere Bilder", total=len(pending))
+            for path, result, exc in _iter_results():
                 progress.update(task_id, description=f"[cyan]{path.name}")
-                try:
-                    if skip_existing and not force and has_existing_alt(path):
-                        _write_log_row(writer, str(path), "", 0, "skip-existing")
-                        skip_count += 1
-                        progress.advance(task_id)
-                        continue
-                except ExifToolMissingError as exc:
-                    console.print(f"[red]{exc}[/red]")
-                    raise typer.Exit(code=1)
-
-                try:
-                    result = client.describe(path, lang=lang, batch_context=batch_context)
-                except ValueError as exc:
-                    error_count += 1
-                    _write_log_row(writer, str(path), "", 0, f"error:{exc}")
-                    progress.advance(task_id)
-                    continue
-                except Exception as exc:  # network / model issues
+                if exc is not None:
                     error_count += 1
                     _write_log_row(writer, str(path), "", 0, f"error:{exc}")
                     progress.advance(task_id)
@@ -371,6 +400,9 @@ def review(
     for key, value in counts.items():
         table.add_row(key, str(value))
     console.print(table)
+    if not dry_run:
+        clear_queue(folder)
+        console.print("[green]Review-Queue aufgeraeumt.[/green]")
 
 
 if __name__ == "__main__":

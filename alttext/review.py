@@ -52,6 +52,12 @@ def load_queue(folder: Path) -> list[ReviewItem]:
     return [ReviewItem.from_dict(entry) for entry in raw.get("items", [])]
 
 
+def clear_queue(folder: Path) -> None:
+    target = review_queue_path(folder)
+    if target.exists():
+        target.unlink()
+
+
 def run_review(
     console: Console,
     items: list[ReviewItem],
