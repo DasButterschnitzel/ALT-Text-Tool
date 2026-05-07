@@ -16,7 +16,7 @@ def _make_image(path: Path, color=(120, 120, 120)) -> None:
 
 
 def _fake_describe_factory(confidence: int = 9):
-    def _fake(self, image_path, lang, batch_context, retries=1):
+    def _fake(self, image_path, lang, batch_context, retries=1, people=None):
         return VisionResult(
             alt_text=f"Test alt for {Path(image_path).name}",
             confidence=confidence,
@@ -67,6 +67,59 @@ def test_generate_workers_parallel(tmp_path: Path):
     log_files = list(tmp_path.glob("alttext_log_*.csv"))
     rows = log_files[0].read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 5  # header + 4
+
+
+def test_annotate_saves_people(tmp_path: Path):
+    _make_image(tmp_path / "a.jpg")
+    _make_image(tmp_path / "b.jpg")
+
+    runner = CliRunner()
+    with patch("alttext.people.open_preview"):
+        result = runner.invoke(
+            app,
+            ["annotate", str(tmp_path), "--no-preview", "--no-recursive"],
+            input="Buergermeister Mueller, Vereinsvorsitzende Schmidt\n\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    annotations_file = tmp_path / "alttext_people.json"
+    assert annotations_file.exists()
+    data = annotations_file.read_text(encoding="utf-8")
+    assert "Buergermeister Mueller" in data
+    assert "Vereinsvorsitzende Schmidt" in data
+
+
+def test_generate_uses_people_annotations(tmp_path: Path):
+    img = tmp_path / "g.jpg"
+    _make_image(img)
+    (tmp_path / "alttext_people.json").write_text(
+        '{"images": {"' + str(img) + '": ["Mueller", "Schmidt"]}}',
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def _fake(self, image_path, lang, batch_context, retries=1, people=None):
+        captured["people"] = people
+        return VisionResult(
+            alt_text="ok",
+            confidence=9,
+            reasoning="ok",
+            raw="{}",
+            needs_review=False,
+        )
+
+    runner = CliRunner()
+    with patch("alttext.vision.VisionClient.check_available", return_value=(True, "ok")), \
+         patch("alttext.vision.VisionClient.describe", new=_fake):
+        result = runner.invoke(
+            app,
+            ["generate", str(tmp_path), "--dry-run", "--no-recursive"],
+            input="N\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["people"] == ["Mueller", "Schmidt"]
 
 
 def test_generate_review_queue_for_low_confidence(tmp_path: Path):

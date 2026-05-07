@@ -68,9 +68,42 @@ alttext review ./fotos
 # Statistik fuer einen Ordner
 alttext stats ./fotos
 
+# Personen pro Bild annotieren (z.B. fuer Pressefotos)
+alttext annotate ./fotos
+
 # Setup-Check
 alttext check
 ```
+
+### Personen pro Bild benennen (z.B. Buergermeister, Vereinsvorstand)
+
+Wenn du Namen im Alt-Text haben willst (BITV erlaubt das fuer Amtstraeger und oeffentliche Personen in offizieller Funktion), nutze den `annotate`-Workflow:
+
+```bash
+# Schritt 1: Pro Bild Namen eingeben
+alttext annotate ./fotos
+```
+
+Pro Bild wird der Standard-Bildbetrachter geoeffnet. Du tippst Komma-getrennt, von links nach rechts:
+
+```
+fotos/IMG_001.jpg - Personen (links nach rechts, leer = keine, q = abbrechen, d = leeren):
+> Buergermeister Mueller, Vereinsvorsitzende Schmidt
+```
+
+Bei zu grossen Gruppen (z.B. Klassenfoto) einfach **leer lassen** und Enter druecken — der Alt-Text beschreibt die Gruppe dann allgemein.
+
+```bash
+# Schritt 2: Generierung. alttext_people.json wird automatisch beruecksichtigt.
+alttext generate ./fotos
+```
+
+Nuetzliche Flags:
+- `--no-preview`: oeffnet die Bilder nicht im Viewer (z.B. fuer Remote-Sessions)
+- `--redo`: bereits annotierte Bilder erneut abfragen
+- Eintraege werden nach jedem Bild gespeichert, du kannst jederzeit mit `q` abbrechen und spaeter weitermachen
+
+Der Vision-Prompt enthaelt dann pro Bild "Auf dem Bild zu sehen (von links nach rechts): Buergermeister Mueller, Vereinsvorsitzende Schmidt" und das Modell darf die Namen im Alt-Text verwenden.
 
 ### HEIC/HEIF (iPhone-Bilder)
 

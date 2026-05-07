@@ -27,10 +27,10 @@ Deine Aufgabe: Generiere einen Alt-Text fuer das Bild, der:
 - KEINE Phrasen wie "Bild von", "Foto zeigt", "Auf dem Bild ist" enthaelt
 - Konkret und sachlich ist, keine Spekulationen
 - Wenn Text im Bild zu sehen ist, diesen wenn relevant kurz erwaehnt
-- Personen werden allgemein beschrieben (Anzahl, Taetigkeit, Setting), keine Identifikationsversuche
+- Personen werden allgemein beschrieben (Anzahl, Taetigkeit, Setting), keine Identifikationsversuche - ausser Namen wurden vom Nutzer explizit angegeben (siehe unten)
 
 Zusaetzlicher Kontext zum Bild: {batch_context}
-
+{people_block}
 Gib deine Antwort EXAKT in diesem JSON-Format aus, ohne Markdown-Codebloecke:
 {{"alt_text": "...", "confidence": 8, "reasoning": "kurze Begruendung der Confidence in einem Satz"}}
 
@@ -49,10 +49,10 @@ Your task: generate an alt text for the image that:
 - Contains NO phrases like "image of", "photo shows", "the picture depicts"
 - Is concrete and factual, no speculation
 - Briefly mentions text in the image when relevant
-- Describes people generally (count, activity, setting), no identification attempts
+- Describes people generally (count, activity, setting), no identification attempts - unless names are explicitly provided by the user below
 
 Additional context: {batch_context}
-
+{people_block}
 Return your answer EXACTLY in this JSON format, no markdown code blocks:
 {{"alt_text": "...", "confidence": 8, "reasoning": "short justification in one sentence"}}
 
@@ -73,10 +73,42 @@ class VisionResult:
     needs_review: bool
 
 
-def build_system_prompt(lang: str, batch_context: str | None) -> str:
+def build_system_prompt(
+    lang: str,
+    batch_context: str | None,
+    people: list[str] | None = None,
+) -> str:
     template = SYSTEM_PROMPT_DE if lang == "de" else SYSTEM_PROMPT_EN
     context_value = batch_context.strip() if batch_context else ("keiner" if lang == "de" else "none")
-    return template.format(batch_context=context_value)
+    if people:
+        if lang == "de":
+            if len(people) == 1:
+                people_line = (
+                    f"Personen-Vorgabe (vom Nutzer): {people[0]}. "
+                    "Du DARFST diesen Namen im Alt-Text nennen, wenn er ins Beschreibung passt."
+                )
+            else:
+                listed = ", ".join(people)
+                people_line = (
+                    f"Personen-Vorgabe (vom Nutzer, von links nach rechts): {listed}. "
+                    "Du DARFST diese Namen im Alt-Text nennen, in der angegebenen Reihenfolge."
+                )
+        else:
+            if len(people) == 1:
+                people_line = (
+                    f"Person identification (provided by user): {people[0]}. "
+                    "You MAY use this name in the alt text where appropriate."
+                )
+            else:
+                listed = ", ".join(people)
+                people_line = (
+                    f"Person identification (provided by user, left to right): {listed}. "
+                    "You MAY use these names in the alt text in this order."
+                )
+        people_block = people_line + "\n"
+    else:
+        people_block = ""
+    return template.format(batch_context=context_value, people_block=people_block)
 
 
 def _extract_json(raw: str) -> dict[str, Any] | None:
@@ -151,10 +183,11 @@ class VisionClient:
         lang: str,
         batch_context: str | None,
         retries: int = 1,
+        people: list[str] | None = None,
     ) -> VisionResult:
         image_bytes = load_and_resize(image_path)
         encoded = encode_base64(image_bytes)
-        system_prompt = build_system_prompt(lang, batch_context)
+        system_prompt = build_system_prompt(lang, batch_context, people=people)
 
         last_raw = ""
         for attempt in range(retries + 1):

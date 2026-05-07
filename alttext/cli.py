@@ -29,6 +29,7 @@ from .metadata import (
     stats_for_folder,
     write_alt_text,
 )
+from .people import annotate_folder, load_annotations
 from .review import ReviewItem, clear_queue, load_queue, run_review, save_queue
 from .vision import VisionClient
 
@@ -256,9 +257,22 @@ def generate(
     else:
         pending = list(images)
 
+    people_map = load_annotations(folder)
+    if people_map:
+        annotated_in_batch = sum(1 for p in pending if str(p) in people_map)
+        console.print(
+            f"[cyan]Personen-Annotationen gefunden: {annotated_in_batch}/{len(pending)} "
+            "Bilder mit Namen.[/cyan]"
+        )
+
     def _describe(path: Path):
         try:
-            return path, client.describe(path, lang=lang, batch_context=batch_context), None
+            names = people_map.get(str(path)) or None
+            return (
+                path,
+                client.describe(path, lang=lang, batch_context=batch_context, people=names),
+                None,
+            )
         except Exception as exc:
             return path, None, exc
 
@@ -403,6 +417,40 @@ def review(
     if not dry_run:
         clear_queue(folder)
         console.print("[green]Review-Queue aufgeraeumt.[/green]")
+
+
+@app.command()
+def annotate(
+    folder: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive"),
+    no_preview: bool = typer.Option(
+        False, "--no-preview", help="Bilder nicht im Standard-Viewer oeffnen."
+    ),
+    redo: bool = typer.Option(
+        False, "--redo", help="Schon annotierte Bilder erneut abfragen."
+    ),
+) -> None:
+    """Personen pro Bild annotieren - die Namen landen automatisch im Vision-Prompt.
+
+    Du gibst pro Bild Komma-getrennt die Namen von links nach rechts an.
+    Leerlassen, wenn die Gruppe zu gross ist oder du keine Namen nennen willst.
+    Die Annotationen werden in alttext_people.json gespeichert und beim
+    naechsten 'alttext generate' automatisch verwendet.
+    """
+    annotations = annotate_folder(
+        folder,
+        recursive=recursive,
+        console=console,
+        preview=not no_preview,
+        redo=redo,
+    )
+    annotated = sum(1 for v in annotations.values() if v)
+    skipped = sum(1 for v in annotations.values() if not v)
+    table = Table(title="Annotation gespeichert")
+    table.add_row("Mit Namen", str(annotated))
+    table.add_row("Bewusst leer (z.B. zu grosse Gruppe)", str(skipped))
+    table.add_row("Datei", str(folder / "alttext_people.json"))
+    console.print(table)
 
 
 if __name__ == "__main__":

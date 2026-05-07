@@ -31,6 +31,26 @@ def test_build_system_prompt_en():
     assert "none" in prompt
 
 
+def test_build_system_prompt_with_single_person_de():
+    prompt = build_system_prompt("de", None, people=["Buergermeister Mueller"])
+    assert "Buergermeister Mueller" in prompt
+    assert "DARFST" in prompt
+
+
+def test_build_system_prompt_with_multiple_people_de():
+    prompt = build_system_prompt("de", "Aktionstag", people=["Mueller", "Schmidt", "Weber"])
+    assert "links nach rechts" in prompt
+    assert "Mueller, Schmidt, Weber" in prompt
+    assert "Aktionstag" in prompt
+
+
+def test_build_system_prompt_without_people_omits_block():
+    prompt = build_system_prompt("de", None, people=None)
+    assert "Personen-Vorgabe" not in prompt
+    prompt2 = build_system_prompt("de", None, people=[])
+    assert "Personen-Vorgabe" not in prompt2
+
+
 def test_extract_json_clean():
     raw = '{"alt_text": "Hund auf Wiese", "confidence": 9, "reasoning": "klar"}'
     assert _extract_json(raw)["alt_text"] == "Hund auf Wiese"
