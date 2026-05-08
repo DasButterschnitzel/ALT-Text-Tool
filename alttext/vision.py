@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import ollama
+from pydantic import BaseModel, Field
 
 from .config import (
     CONFIDENCE_THRESHOLD,
@@ -17,6 +18,14 @@ from .config import (
     ollama_host,
 )
 from .image_utils import encode_base64, load_and_resize
+
+
+class AltTextResponseSchema(BaseModel):
+    """Schema enforced via Ollama's structured-output `format` parameter."""
+
+    alt_text: str = Field(description="The accessible alt text, max 125 chars.")
+    confidence: int = Field(ge=1, le=10, description="Self-rated confidence 1-10.")
+    reasoning: str = Field(description="One-sentence reason for the confidence.")
 
 
 SYSTEM_PROMPT_DE = """Du bist Experte fuer barrierefreie Bildbeschreibungen nach BITV 2.0 und WCAG 2.1.
@@ -189,6 +198,11 @@ class VisionClient:
         encoded = encode_base64(image_bytes)
         system_prompt = build_system_prompt(lang, batch_context, people=people)
 
+        # Use Ollama's structured-output mode (format=) so the model is
+        # constrained to our JSON schema. This dramatically reduces
+        # parse failures compared to relying on prompt instructions alone.
+        json_schema = AltTextResponseSchema.model_json_schema()
+
         last_raw = ""
         for attempt in range(retries + 1):
             response = self._client.chat(
@@ -203,6 +217,7 @@ class VisionClient:
                         "images": [encoded],
                     },
                 ],
+                format=json_schema,
                 options={"temperature": 0.2},
             )
             raw = (
@@ -229,4 +244,16 @@ class VisionClient:
                     needs_review=confidence < CONFIDENCE_THRESHOLD,
                 )
 
-        raise ValueError(f"Modell-Antwort war kein gueltiges JSON: {last_raw[:200]}")
+        # Last-resort fallback: model returned non-JSON despite schema. Rather
+        # than skip the file entirely, treat the raw text as the alt text and
+        # send it to the review queue with low confidence so the user can fix it.
+        if last_raw.strip():
+            cleaned = re.sub(r"\s+", " ", last_raw.strip())
+            return VisionResult(
+                alt_text=_truncate(cleaned),
+                confidence=3,
+                reasoning="Modell hat kein JSON geliefert; Rohtext als Vorschlag.",
+                raw=last_raw,
+                needs_review=True,
+            )
+        raise ValueError(f"Modell-Antwort war leer: {last_raw[:200]}")

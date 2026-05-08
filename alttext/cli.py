@@ -222,7 +222,8 @@ def generate(
     review_items: list[ReviewItem] = []
     report_rows: list[dict] = []
 
-    log_file = log_path.open("w", encoding="utf-8", newline="")
+    # utf-8-sig writes a BOM so Excel opens umlauts correctly.
+    log_file = log_path.open("w", encoding="utf-8-sig", newline="")
     writer = csv.writer(log_file)
     writer.writerow(["filename", "alt_text", "confidence", "status", "timestamp"])
 

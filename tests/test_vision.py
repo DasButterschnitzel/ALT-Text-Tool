@@ -109,16 +109,57 @@ def test_describe_parses_response():
     assert result.needs_review is False
 
 
-def test_describe_invalid_then_raises():
+def test_describe_falls_back_to_raw_text_when_no_json():
     client = VisionClient.__new__(VisionClient)
     client.model = "qwen2.5vl:7b"
     client._client = MagicMock()
-    client._client.chat.return_value = {"message": {"content": "kein JSON"}}
+    client._client.chat.return_value = {
+        "message": {"content": "Ein Mann hebt zwei Kinder hoch."}
+    }
+    with patch("alttext.vision.load_and_resize", return_value=b"x"):
+        result = client.describe(
+            image_path=__import__("pathlib").Path("/tmp/x.jpg"),
+            lang="de",
+            batch_context=None,
+            retries=0,
+        )
+    assert "Mann hebt zwei Kinder" in result.alt_text
+    assert result.confidence == 3
+    assert result.needs_review is True
+
+
+def test_describe_raises_on_empty_response():
+    client = VisionClient.__new__(VisionClient)
+    client.model = "qwen2.5vl:7b"
+    client._client = MagicMock()
+    client._client.chat.return_value = {"message": {"content": ""}}
     with patch("alttext.vision.load_and_resize", return_value=b"x"):
         with pytest.raises(ValueError):
             client.describe(
                 image_path=__import__("pathlib").Path("/tmp/x.jpg"),
                 lang="de",
                 batch_context=None,
-                retries=1,
+                retries=0,
             )
+
+
+def test_describe_passes_format_schema_to_ollama():
+    client = VisionClient.__new__(VisionClient)
+    client.model = "qwen2.5vl:7b"
+    client._client = MagicMock()
+    client._client.chat.return_value = {
+        "message": {
+            "content": '{"alt_text": "x", "confidence": 8, "reasoning": "y"}'
+        }
+    }
+    with patch("alttext.vision.load_and_resize", return_value=b"x"):
+        client.describe(
+            image_path=__import__("pathlib").Path("/tmp/x.jpg"),
+            lang="de",
+            batch_context=None,
+        )
+    kwargs = client._client.chat.call_args.kwargs
+    assert "format" in kwargs
+    schema = kwargs["format"]
+    assert schema["properties"]["alt_text"]["type"] == "string"
+    assert schema["properties"]["confidence"]["type"] == "integer"
